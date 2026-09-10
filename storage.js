@@ -41,7 +41,8 @@
    */
   function buildRecord(meta, computed, removedCombo, existing) {
     var isExact = computed.status === 'exact' || computed.status === 'perfect';
-    var check = L.validateClosing(computed.counts, removedCombo, isExact);
+    var target = L.targetFor(computed.target);
+    var check = L.validateClosing(computed.counts, removedCombo, isExact, target);
     if (!check.ok) throw new Error('validation_failed:' + check.errors.join(','));
     var now = existing && existing.createdAt ? new Date(existing.createdAt) : new Date();
     var d = existing && existing.date ? existing.date : now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
@@ -52,6 +53,8 @@
       updatedAt: new Date().toISOString(),
       date: d,
       time: t,
+      register: L.registerKey(meta.register),
+      target: target,
       shift: meta.shift,
       responsible: meta.responsible,
       counts: computed.counts,
@@ -99,11 +102,11 @@
   }
 
   function exportCsv(list) {
-    var header = ['Date', 'Time', 'Shift', 'Responsible', 'Initial Cash', 'Removed', 'Final Cash']
+    var header = ['Date', 'Time', 'Register', 'Target', 'Shift', 'Responsible', 'Initial Cash', 'Removed', 'Final Cash']
       .concat(L.DENOMINATIONS.map(function (d) { return '€' + centsToCsv(d) + ' count'; }))
       .concat(['Removed Composition']);
     var rows = list.map(function (r) {
-      return [r.date, r.time, r.shift, r.responsible,
+      return [r.date, r.time, L.registerKey(r.register), centsToCsv(r.target || L.TARGET_CENTS), r.shift, r.responsible,
               centsToCsv(r.initialCash), centsToCsv(r.removedCash), centsToCsv(r.finalCash)]
         .concat(L.DENOMINATIONS.map(function (d) { return r.counts[d] || 0; }))
         .concat([comboLabel(r.removed)]);

@@ -185,7 +185,7 @@ test('M: CSV export has header + rows and Excel-friendly format', function () {
   var csv = S.exportCsv([rec]);
   var lines = csv.replace(/^\uFEFF/, '').trim().split('\r\n');
   assert.strictEqual(lines.length, 2);
-  assert.strictEqual(lines[0].split(',').length, 19);
+  assert.strictEqual(lines[0].split(',').length, 21);
   assert.ok(lines[1].indexOf('"Matheus, Jr"') > 0);
   assert.ok(lines[1].indexOf('249.00,99.00,150.00') > 0);
   assert.ok(lines[1].indexOf('1x50.00 + 2x20.00 + 1x5.00 + 2x2.00') > 0);
@@ -215,6 +215,22 @@ test('V: validation rejects invalid counts and tampering', function () {
   var v = L.validateClosing(C({5000:3,2000:1}), C({2000:2}), true);
   assert.ok(!v.ok && v.errors.indexOf('removed_exceeds_available') >= 0);
   assert.throws(function () { S.buildRecord({shift:'night',responsible:'x'}, L.computeClosing(C({5000:3,2000:1})), C({2000:2})); });
+});
+
+test('R: bar register leaves €100', function () {
+  var counts = C({5000:2,2000:2,1000:1}); // 150
+  var r = L.computeClosing(counts, L.REGISTERS.bar);
+  assert.strictEqual(r.status, 'exact');
+  assert.strictEqual(r.toRemove, 5000);
+  assert.deepStrictEqual(r.recommended, C({5000:1}));
+  assert.strictEqual(r.finalCash, 10000);
+  assert.ok(L.validateClosing(counts, r.recommended, true, 10000).ok);
+  assert.ok(!L.validateClosing(counts, r.recommended, true, 15000).ok);
+  var below = L.computeClosing(C({5000:1,2000:2}), 10000);
+  assert.strictEqual(below.status, 'below'); assert.strictEqual(below.missing, 1000);
+  var rec = S.buildRecord({ shift: 'night', responsible: 'Xu', register: 'bar' }, r, r.recommended);
+  assert.strictEqual(rec.target, 10000); assert.strictEqual(rec.register, 'bar'); assert.strictEqual(L.registerKey('club'), 'dispensary'); assert.strictEqual(L.registerKey(undefined), 'dispensary'); assert.strictEqual(rec.finalCash, 10000);
+  var csv = S.exportCsv([rec]); assert.ok(csv.indexOf(',bar,100.00,') > 0);
 });
 
 test('P: performance — large cash computed instantly', function () {

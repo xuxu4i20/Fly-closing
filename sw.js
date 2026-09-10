@@ -1,5 +1,5 @@
 /* FLY Closing — minimal offline cache. Bump CACHE when files change. */
-var CACHE = 'fly-closing-v3';
+var CACHE = 'fly-closing-v5';
 var FILES = ['./', './index.html', './styles.css', './logic.js', './storage.js', './i18n.js', './app.js', './manifest.webmanifest', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));

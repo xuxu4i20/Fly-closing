@@ -1,6 +1,8 @@
 # FLY Closing
 
-Fechamento de caixa por turno. Conta o dinheiro físico, deixa €150,00, diz exatamente o que retirar.
+Fechamento de caixa por turno. Conta o dinheiro físico, deixa o fundo de caixa (Dispensario €150 / Bar €100), diz exatamente o que retirar.
+
+Modo € nas moedas: digite o subtotal de cada moeda e a app converte em quantidade (só aceita múltiplos exatos).
 
 ## Rodar
 - **Local**: abra `index.html` no navegador (funciona sem servidor).
@@ -10,7 +12,7 @@ Fechamento de caixa por turno. Conta o dinheiro físico, deixa €150,00, diz ex
 ```
 node tests.js
 ```
-20 testes cobrindo os casos A–N do brief (precisão, limites, sem solução exata, ranking, persistência, editar/apagar, CSV, verificação `inicial − retirado = final`).
+21 testes cobrindo os casos A–N do brief (precisão, limites, sem solução exata, ranking, persistência, editar/apagar, CSV, verificação `inicial − retirado = final`).
 
 ## Arquivos
 | Arquivo | Papel |

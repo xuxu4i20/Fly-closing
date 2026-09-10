@@ -4,7 +4,17 @@
   var STRINGS = {
     en: {
       appName: 'FLY Closing',
-      tagline: 'Count the cash. Leave €150.',
+      tagline: 'Count the cash. Leave the float.',
+      register: 'Sector',
+      dispensary: 'Dispensary',
+      club: 'Dispensary',
+      bar: 'Bar',
+      byCount: 'Count',
+      byAmount: '€ Amount',
+      amountPlaceholder: '0.00',
+      notMultiple: 'Not a multiple of',
+      coinsAmountHint: 'Type the subtotal of each coin. It is converted to a count automatically.',
+
       newClosing: 'New closing',
       history: 'History',
       shift: 'Shift',
@@ -27,11 +37,11 @@
       recommended: 'Recommended',
       alternative: 'Alternative',
       belowMinimum: 'Cash below minimum',
-      belowMinimumHint: 'A closing needs at least €150.00 in the drawer. Check the count or add cash.',
+      belowMinimumHint: 'A closing needs at least {t} in the drawer. Check the count or add cash.',
       missing: 'Missing',
       perfectClosing: 'Perfect closing',
       perfectHint: 'Nothing to remove.',
-      noExact: 'It is not possible to leave exactly €150.00 with the current cash composition.',
+      noExact: 'It is not possible to leave exactly {t} with the current cash composition.',
       noExactHint: 'Choose the closest option. The amount left is shown for each one.',
       option: 'Option',
       leave: 'Leave',
@@ -64,7 +74,17 @@
     },
     es: {
       appName: 'FLY Closing',
-      tagline: 'Cuenta la caja. Deja 150 €.',
+      tagline: 'Cuenta la caja. Deja el fondo.',
+      register: 'Sector',
+      dispensary: 'Dispensario',
+      club: 'Dispensario',
+      bar: 'Bar',
+      byCount: 'Cantidad',
+      byAmount: 'Importe €',
+      amountPlaceholder: '0,00',
+      notMultiple: 'No es múltiplo de',
+      coinsAmountHint: 'Escribe el subtotal de cada moneda. Se convierte en cantidad automáticamente.',
+
       newClosing: 'Nuevo cierre',
       history: 'Historial',
       shift: 'Turno',
@@ -87,11 +107,11 @@
       recommended: 'Recomendado',
       alternative: 'Alternativa',
       belowMinimum: 'Caja por debajo del mínimo',
-      belowMinimumHint: 'Un cierre necesita al menos 150,00 € en caja. Revisa el recuento o añade efectivo.',
+      belowMinimumHint: 'Un cierre necesita al menos {t} en caja. Revisa el recuento o añade efectivo.',
       missing: 'Falta',
       perfectClosing: 'Cierre perfecto',
       perfectHint: 'No hay nada que retirar.',
-      noExact: 'No es posible dejar exactamente 150,00 € con la composición actual de la caja.',
+      noExact: 'No es posible dejar exactamente {t} con la composición actual de la caja.',
       noExactHint: 'Elige la opción más cercana. Se muestra cuánto queda en caja en cada una.',
       option: 'Opción',
       leave: 'Dejar',
@@ -142,7 +162,25 @@
     try { localStorage.setItem('fly_lang', l); } catch (e) {}
     document.documentElement.lang = l;
   }
-  function t(key) { return (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key; }
+  function t(key, vars) {
+    var str = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    if (vars) Object.keys(vars).forEach(function (k) { str = str.split('{' + k + '}').join(vars[k]); });
+    return str;
+  }
+  /** Parse a user-typed amount ("12,40" / "12.40" / "12") → integer cents, or null if invalid. */
+  function parseAmount(str) {
+    str = String(str || '').trim().replace(/\s|€/g, '');
+    if (str === '') return 0;
+    if (!/^\d+([.,]\d{0,2})?$/.test(str)) return null;
+    var parts = str.split(/[.,]/);
+    var dec = (parts[1] || '') + '00';
+    return parseInt(parts[0], 10) * 100 + parseInt(dec.slice(0, 2), 10);
+  }
+  /** Integer cents → editable plain amount ("12,40" in es, "12.40" in en). */
+  function plainAmount(cents) {
+    var s = String(cents); while (s.length < 3) s = '0' + s;
+    return s.slice(0, -2) + (lang === 'es' ? ',' : '.') + s.slice(-2);
+  }
 
   /** Integer cents → localized string. en: €249.00 · es: 249,00 € */
   function money(cents) {
@@ -167,5 +205,5 @@
     return p[2] + ' ' + MONTHS[lang][parseInt(p[1], 10) - 1] + ' ' + p[0];
   }
   root.I18N = { init: function () { setLang(detect()); }, setLang: setLang, get lang() { return lang; },
-                t: t, money: money, denom: denom, formatDate: formatDate };
+                t: t, parseAmount: parseAmount, plainAmount: plainAmount, money: money, denom: denom, formatDate: formatDate };
 })(window);

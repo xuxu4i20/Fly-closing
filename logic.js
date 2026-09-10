@@ -5,7 +5,11 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var TARGET_CENTS = 15000;
+  var TARGET_CENTS = 15000; // default (club)
+  var REGISTERS = { dispensary: 15000, bar: 10000 };
+  // Older records used the key 'club' for the €150 register.
+  function registerKey(k) { return k === 'club' ? 'dispensary' : (REGISTERS[k] ? k : 'dispensary'); }
+  function targetFor(target) { return (typeof target === 'number' && target > 0) ? target : TARGET_CENTS; }
   // Largest first. Order matters for tie-breaking (prefer larger denominations).
   var DENOMINATIONS = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
   var NOTES = [10000, 5000, 2000, 1000, 500];
@@ -43,8 +47,8 @@
     return total;
   }
 
-  function calculateAmountToRemove(totalCents) {
-    return totalCents - TARGET_CENTS; // may be negative => below minimum
+  function calculateAmountToRemove(totalCents, target) {
+    return totalCents - targetFor(target); // may be negative => below minimum
   }
 
   function countUnits(combo) {
@@ -212,30 +216,31 @@
    * Full closing computation from a physical count.
    * status: 'below' | 'perfect' | 'exact' | 'inexact'
    */
-  function computeClosing(counts) {
+  function computeClosing(counts, target) {
+    target = targetFor(target);
     counts = normalizeCounts(counts);
     var total = calculateTotalCash(counts);
-    var toRemove = calculateAmountToRemove(total);
+    var toRemove = calculateAmountToRemove(total, target);
     if (toRemove < 0) {
-      return { status: 'below', counts: counts, total: total, missing: -toRemove, toRemove: 0 };
+      return { status: 'below', target: target, counts: counts, total: total, missing: -toRemove, toRemove: 0 };
     }
     var result = findBestRemovalCombination(counts, toRemove);
     if (toRemove === 0) {
       return {
-        status: 'perfect', counts: counts, total: total, toRemove: 0,
+        status: 'perfect', target: target, counts: counts, total: total, toRemove: 0,
         recommended: result.recommended, alternative: null,
         remaining: counts, finalCash: total
       };
     }
     if (result.exact) {
       return {
-        status: 'exact', counts: counts, total: total, toRemove: toRemove,
+        status: 'exact', target: target, counts: counts, total: total, toRemove: toRemove,
         recommended: result.recommended, alternative: result.alternative,
-        remaining: calculateRemainingCash(counts, result.recommended), finalCash: TARGET_CENTS
+        remaining: calculateRemainingCash(counts, result.recommended), finalCash: target
       };
     }
     return {
-      status: 'inexact', counts: counts, total: total, toRemove: toRemove,
+      status: 'inexact', target: target, counts: counts, total: total, toRemove: toRemove,
       options: result.nearest.map(function (o) {
         return { remove: o.remove, leave: o.leave, combo: o.combo,
                  remaining: calculateRemainingCash(counts, o.combo) };
@@ -248,7 +253,8 @@
    * Checks: no negative counts, removed <= available, initial - removed = final,
    * and final = 150.00 when the closing is exact/perfect.
    */
-  function validateClosing(counts, removed, expectExact) {
+  function validateClosing(counts, removed, expectExact, target) {
+    target = targetFor(target);
     var errors = [];
     counts = normalizeCounts(counts);
     removed = normalizeCounts(removed);
@@ -262,13 +268,16 @@
     var finalCash = calculateTotalCash(remaining);
     if (initial - removedValue !== finalCash) errors.push('arithmetic_mismatch');
     if (removedValue > initial) errors.push('removed_exceeds_total');
-    if (initial < TARGET_CENTS) errors.push('below_minimum');
-    if (expectExact && finalCash !== TARGET_CENTS) errors.push('final_not_target');
+    if (initial < target) errors.push('below_minimum');
+    if (expectExact && finalCash !== target) errors.push('final_not_target');
     return { ok: errors.length === 0, initial: initial, removed: removedValue, finalCash: finalCash, errors: errors };
   }
 
   return {
     TARGET_CENTS: TARGET_CENTS,
+    REGISTERS: REGISTERS,
+    targetFor: targetFor,
+    registerKey: registerKey,
     DENOMINATIONS: DENOMINATIONS,
     NOTES: NOTES,
     COINS: COINS,

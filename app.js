@@ -12,6 +12,8 @@
     editingId: null,
     existing: null,
     shift: 'night',
+    register: 'dispensary',
+    coinMode: 'count',   // 'count' | 'amount'
     responsible: '',
     counts: L.normalizeCounts({}),
     computed: null,
@@ -30,12 +32,15 @@
     if (screen === 'new' && !opts.keep) {
       state.editingId = opts.editingId || null;
       state.existing = opts.existing || null;
+      state.coinMode = 'count';
       if (state.existing) {
         state.shift = state.existing.shift;
+        state.register = L.registerKey(state.existing.register);
         state.responsible = state.existing.responsible;
         state.counts = L.normalizeCounts(state.existing.counts);
       } else {
         state.shift = suggestShift();
+        state.register = lastRegister();
         state.responsible = lastResponsible();
         state.counts = L.normalizeCounts({});
       }
@@ -45,6 +50,8 @@
     window.scrollTo(0, 0);
   }
   function suggestShift() { var h = new Date().getHours(); return (h >= 5 && h < 17) ? 'morning' : 'night'; }
+  function lastRegister() { try { return L.registerKey(localStorage.getItem('fly_last_reg')); } catch (e) { return 'dispensary'; } }
+  function target() { return L.REGISTERS[state.register] || L.TARGET_CENTS; }
   function lastResponsible() { try { return localStorage.getItem('fly_last_resp') || ''; } catch (e) { return ''; } }
 
   /* ---------- render ---------- */
@@ -96,6 +103,15 @@
     });
 
     var g = el('div', 'group');
+    g.appendChild(el('div', 'group-label', t('register'))).style.margin = '14px 16px 8px';
+    var regSeg = el('div', 'segmented');
+    Object.keys(L.REGISTERS).forEach(function (rg) {
+      var b = el('button', null, t(rg) + ' · ' + I.denom(L.REGISTERS[rg]));
+      b.setAttribute('aria-pressed', state.register === rg);
+      b.addEventListener('click', function () { state.register = rg; regSeg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); updateLiveTotal(); });
+      regSeg.appendChild(b);
+    });
+    g.appendChild(regSeg);
     var seg = el('div', 'segmented');
     ['morning', 'night'].forEach(function (sh) {
       var b = el('button', null, t(sh));
@@ -103,7 +119,7 @@
       b.addEventListener('click', function () { state.shift = sh; seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); });
       seg.appendChild(b);
     });
-    g.appendChild(el('div', 'group-label', t('shift'))).style.margin = '14px 16px 8px';
+    g.appendChild(el('div', 'group-label', t('shift'))).style.margin = '4px 16px 8px';
     g.appendChild(seg);
     var f = el('div', 'field');
     f.innerHTML = '<label for="resp">' + t('responsible') + '</label>';
@@ -117,16 +133,27 @@
 
     s.appendChild(el('div', 'group-label', t('notes')));
     s.appendChild(denomGroup(L.NOTES));
-    s.appendChild(el('div', 'group-label', t('coins')));
-    s.appendChild(denomGroup(L.COINS));
+    var coinHead = el('div', 'group-label coins-head');
+    coinHead.appendChild(el('span', null, t('coins')));
+    var modeSw = el('div', 'lang-switch');
+    [['count', 'byCount'], ['amount', 'byAmount']].forEach(function (m) {
+      var b = el('button', null, t(m[1]));
+      b.setAttribute('aria-pressed', state.coinMode === m[0]);
+      b.addEventListener('click', function () { state.coinMode = m[0]; render(); });
+      modeSw.appendChild(b);
+    });
+    coinHead.appendChild(modeSw);
+    s.appendChild(coinHead);
+    if (state.coinMode === 'amount') s.appendChild(el('p', 'coins-hint', t('coinsAmountHint')));
+    s.appendChild(denomGroup(L.COINS, state.coinMode === 'amount'));
 
     var bar = el('div', 'sticky-total');
     bar.innerHTML = '<div class="line"><span class="k">' + t('totalInCash') + '</span><span class="v" id="live-total"></span></div>';
     var calc = el('button', 'btn btn-primary', t('calculate'));
     calc.addEventListener('click', function () {
       if (!state.responsible.trim()) { inp.classList.add('invalid'); hint.classList.add('show'); inp.focus(); return; }
-      try { localStorage.setItem('fly_last_resp', state.responsible.trim()); } catch (e) {}
-      state.computed = L.computeClosing(state.counts);
+      try { localStorage.setItem('fly_last_resp', state.responsible.trim()); localStorage.setItem('fly_last_reg', state.register); } catch (e) {}
+      state.computed = L.computeClosing(state.counts, target());
       state.choice = 0;
       go('result');
     });
@@ -135,11 +162,13 @@
     updateLiveTotal();
   }
 
-  function denomGroup(denoms) {
+  function denomGroup(denoms, amountMode) {
     var g = el('div', 'group');
     denoms.forEach(function (d) {
       var row = el('div', 'denom');
-      row.appendChild(el('div', 'label', I.denom(d)));
+      var label = el('div', 'label', I.denom(d));
+      row.appendChild(label);
+      if (amountMode) { row.appendChild(amountField(d, label)); g.appendChild(row); return; }
       var st = el('div', 'stepper');
       var minus = el('button', null, '−'); minus.setAttribute('aria-label', '−');
       var plus = el('button', null, '+'); plus.setAttribute('aria-label', '+');
@@ -168,11 +197,40 @@
     return g;
   }
 
+  /** Coin row in "amount" mode: user types the subtotal, it is converted to a count. */
+  function amountField(d, label) {
+    var wrap = el('div', 'amount-wrap');
+    var inp = el('input'); inp.type = 'text'; inp.inputMode = 'decimal'; inp.autocomplete = 'off';
+    inp.placeholder = t('amountPlaceholder'); inp.setAttribute('aria-label', I.denom(d));
+    var sub = el('div', 'sub');
+    var refresh = function () {
+      sub.textContent = '= ' + state.counts[d] + ' ' + t(state.counts[d] === 1 ? 'unit' : 'units');
+    };
+    inp.value = state.counts[d] ? I.plainAmount(state.counts[d] * d) : '';
+    refresh();
+    inp.addEventListener('focus', function () { inp.select(); setTimeout(function () { wrap.parentNode.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 250); });
+    inp.addEventListener('input', function () {
+      var cents = I.parseAmount(inp.value);
+      var bad = cents === null || cents % d !== 0 || cents / d > 9999;
+      inp.classList.toggle('invalid', bad);
+      if (bad) { sub.textContent = cents === null ? '' : t('notMultiple') + ' ' + I.denom(d); sub.classList.add('bad'); return; }
+      sub.classList.remove('bad');
+      state.counts[d] = cents / d; refresh(); updateLiveTotal();
+    });
+    inp.addEventListener('blur', function () {
+      inp.value = state.counts[d] ? I.plainAmount(state.counts[d] * d) : '';
+      inp.classList.remove('invalid'); sub.classList.remove('bad'); refresh();
+    });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') inp.blur(); });
+    wrap.appendChild(inp); wrap.appendChild(sub);
+    return wrap;
+  }
+
   function updateLiveTotal() {
     var v = $('#live-total'); if (!v) return;
     var total = L.calculateTotalCash(state.counts);
     v.textContent = money(total);
-    v.classList.toggle('warn', total < L.TARGET_CENTS);
+    v.classList.toggle('warn', total < target());
   }
 
   /* ---------- result ---------- */
@@ -214,7 +272,7 @@
 
     if (r.status === 'below') {
       var n = el('div', 'notice err');
-      n.innerHTML = '<h2>' + t('belowMinimum') + '</h2><p>' + t('belowMinimumHint') + '</p>';
+      n.innerHTML = '<h2>' + t('belowMinimum') + '</h2><p>' + t('belowMinimumHint', { t: money(r.target) }) + '</p>';
       s.appendChild(n);
       var g = el('div', 'group');
       g.innerHTML = '<div class="row"><span class="k">' + t('total') + '</span><span class="v">' + money(r.total) + '</span></div>' +
@@ -233,23 +291,23 @@
       var pn = el('div', 'notice ok');
       pn.innerHTML = '<h2>' + t('perfectClosing') + ' ✓</h2><p>' + t('perfectHint') + '</p>';
       s.appendChild(pn);
-      s.appendChild(summaryGrid(r.total, 0, r.total));
+      s.appendChild(summaryGrid(r.total, 0, r.total, r.target));
       selectedCombo = r.recommended;
     } else if (r.status === 'exact') {
       var hero = el('div', 'hero-number');
       hero.innerHTML = '<div class="k">' + t('remove') + '</div><div class="v remove">' + money(r.toRemove) + '</div>';
       s.appendChild(hero);
-      s.appendChild(summaryGrid(r.total, r.toRemove, L.TARGET_CENTS));
+      s.appendChild(summaryGrid(r.total, r.toRemove, r.target, r.target));
       var hasAlt = !!r.alternative;
       selectedCombo = state.choice === 1 && hasAlt ? r.alternative : r.recommended;
       s.appendChild(comboCard(t('recommended'), r.recommended, { star: true, selectable: hasAlt, selected: state.choice === 0, onPick: function () { state.choice = 0; render(); } }));
       if (hasAlt) s.appendChild(comboCard(t('alternative'), r.alternative, { selectable: true, selected: state.choice === 1, onPick: function () { state.choice = 1; render(); } }));
     } else {
       var wn = el('div', 'notice warn');
-      wn.innerHTML = '<h2>' + t('noExact') + '</h2><p>' + t('noExactHint') + '</p>';
+      wn.innerHTML = '<h2>' + t('noExact', { t: money(r.target) }) + '</h2><p>' + t('noExactHint') + '</p>';
       s.appendChild(wn);
       var opt = r.options[state.choice] || r.options[0];
-      s.appendChild(summaryGrid(r.total, opt.remove, opt.leave));
+      s.appendChild(summaryGrid(r.total, opt.remove, opt.leave, r.target));
       selectedCombo = opt.combo;
       r.options.forEach(function (o, i) {
         s.appendChild(comboCard(t('option') + ' ' + (i + 1), o.combo, { leaveAmt: o.leave, selectable: r.options.length > 1, selected: state.choice === i, onPick: function () { state.choice = i; render(); } }));
@@ -260,7 +318,7 @@
     var save = el('button', 'btn btn-primary', state.editingId ? t('update') : t('save'));
     save.addEventListener('click', function () {
       var rec;
-      try { rec = S.buildRecord({ shift: state.shift, responsible: state.responsible.trim() }, r, selectedCombo, state.existing); }
+      try { rec = S.buildRecord({ shift: state.shift, responsible: state.responsible.trim(), register: state.register }, r, selectedCombo, state.existing); }
       catch (e) { toast(String(e.message)); return; }
       S.saveClosing(rec);
       toast(state.editingId ? t('updated') : t('saved'));
@@ -275,9 +333,9 @@
     void exact;
   }
 
-  function summaryGrid(total, remove, leave) {
+  function summaryGrid(total, remove, leave, tgt) {
     var g = el('div', 'summary');
-    var leaveOk = leave === L.TARGET_CENTS;
+    var leaveOk = leave === L.targetFor(tgt);
     g.innerHTML =
       '<div class="cell"><div class="k">' + t('totalInCash') + '</div><div class="v">' + money(total) + '</div></div>' +
       '<div class="cell remove"><div class="k">' + t('remove') + '</div><div class="v">' + money(remove) + '</div></div>' +
@@ -302,7 +360,7 @@
     list.forEach(function (r) {
       var b = el('button', 'hist-item');
       b.innerHTML = '<div class="main"><div class="d">' + I.formatDate(r.date) + '</div>' +
-        '<div class="m">' + t(r.shift) + ' · ' + esc(r.responsible) + '</div>' +
+        '<div class="m">' + t(L.registerKey(r.register)) + ' · ' + t(r.shift) + ' · ' + esc(r.responsible) + '</div>' +
         '<div class="flow">' + money(r.initialCash) + '<span class="arrow">→</span>' + money(r.finalCash) + (r.exact ? '' : ' <span class="badge warn">' + t('inexactBadge') + '</span>') + '</div></div>' +
         '<div class="side"><div class="r">' + money(r.removedCash) + '</div><div class="rk">' + t('remove') + '</div></div>' + CHEV_R;
       b.addEventListener('click', function () { go('detail', { id: r.id }); });
@@ -336,10 +394,10 @@
 
     s.appendChild(el('div', 'group-label', t('closingInformation')));
     var info = el('div', 'group');
-    info.innerHTML = row(t('date'), I.formatDate(r.date)) + row(t('time'), r.time) + row(t('shift'), t(r.shift)) + row(t('responsible'), esc(r.responsible));
+    info.innerHTML = row(t('date'), I.formatDate(r.date)) + row(t('time'), r.time) + row(t('register'), t(L.registerKey(r.register)) + ' · ' + money(r.target || L.TARGET_CENTS)) + row(t('shift'), t(r.shift)) + row(t('responsible'), esc(r.responsible));
     s.appendChild(info);
 
-    s.appendChild(summaryGrid(r.initialCash, r.removedCash, r.finalCash));
+    s.appendChild(summaryGrid(r.initialCash, r.removedCash, r.finalCash, r.target || L.TARGET_CENTS));
 
     s.appendChild(el('div', 'group-label', t('initialCash')));
     s.appendChild(countsGroup(r.counts, r.initialCash));
@@ -349,7 +407,7 @@
     s.appendChild(countsGroup(r.remaining, r.finalCash));
 
     s.appendChild(el('div', 'group-label', t('verification')));
-    var v = L.validateClosing(r.counts, r.removed, r.exact);
+    var v = L.validateClosing(r.counts, r.removed, r.exact, r.target || L.TARGET_CENTS);
     var ver = el('div', 'group');
     ver.innerHTML = '<div class="verify"><div class="eq">' + money(v.initial) + '<span class="op">−</span>' + money(v.removed) + '<span class="op">=</span>' + money(v.finalCash) +
       ' <span class="' + (v.ok ? 'ok' : 'bad') + '">' + (v.ok ? '✓' : '✕') + '</span></div></div>';
